@@ -32,17 +32,38 @@ class DocumentProcessor:
         Extract text content from a URL
         """
         try:
-            response = requests.get(url, timeout=10)
+            # Add proper headers to avoid being blocked
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive',
+            }
+
+            print(f"📡 Fetching URL: {url}")
+            response = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
             response.raise_for_status()
+            print(f"✓ Successfully fetched URL (status {response.status_code})")
 
             soup = BeautifulSoup(response.content, 'html.parser')
 
             # Remove unwanted elements
-            for element in soup(["script", "style", "nav", "footer", "header", "aside", "iframe"]):
+            for element in soup(["script", "style", "nav", "footer", "header", "aside", "iframe", "noscript"]):
                 element.decompose()
 
-            # Try to extract main content first
-            main_content = soup.find('main') or soup.find('article') or soup.find(class_='content') or soup
+            # Try to extract main content with multiple strategies
+            main_content = (
+                soup.find('main') or
+                soup.find('article') or
+                soup.find(class_='content') or
+                soup.find(class_='article') or
+                soup.find(class_='post-content') or
+                soup.find(id='content') or
+                soup.find(id='main') or
+                soup.find('body') or
+                soup
+            )
 
             text = main_content.get_text()
 
@@ -54,8 +75,18 @@ class DocumentProcessor:
             # Remove extra whitespace
             text = ' '.join(text.split())
 
+            if len(text) < 100:
+                raise ValueError("Extracted text is too short. The page might not have loaded properly.")
+
+            print(f"✓ Extracted {len(text)} characters from URL")
             return text
 
+        except requests.exceptions.Timeout:
+            raise ValueError(f"Request timed out. The URL took too long to respond.")
+        except requests.exceptions.ConnectionError:
+            raise ValueError(f"Could not connect to the URL. Please check your internet connection.")
+        except requests.exceptions.HTTPError as e:
+            raise ValueError(f"HTTP error {e.response.status_code}: {e.response.reason}")
         except Exception as e:
             raise ValueError(f"Failed to fetch content from URL: {str(e)}")
 
