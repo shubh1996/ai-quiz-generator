@@ -12,9 +12,21 @@ load_dotenv()
 
 app = FastAPI(title="Quiz Generator API")
 
+# Configure CORS for both development and production
+allowed_origins = [
+    "http://localhost:3000",  # Local development
+    "https://*.vercel.app",   # Vercel preview deployments
+]
+
+# Add production URL from environment variable if set
+production_url = os.getenv("FRONTEND_URL")
+if production_url:
+    allowed_origins.append(production_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=allowed_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",  # Allow all Vercel deployments
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
