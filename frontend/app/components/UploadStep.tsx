@@ -45,7 +45,8 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to generate quiz");
+        const errorData = await response.json().catch(() => ({ detail: "Failed to generate quiz" }));
+        throw new Error(errorData.detail || "Failed to generate quiz");
       }
 
       const data = await response.json();
@@ -117,7 +118,7 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               placeholder="https://example.com/article"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium placeholder-gray-400"
             />
           </div>
         )}

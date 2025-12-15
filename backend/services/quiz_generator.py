@@ -27,8 +27,8 @@ class QuizGenerator:
         Generate a 5-question MCQ quiz from the provided content
         """
         if not self.api_key:
-            print("⚠️  No API key found - using demo mode")
-            return self._generate_demo_quiz(content)
+            print("❌ No API key found")
+            raise ValueError("API key not configured. Please set PERPLEXITY_API_KEY environment variable.")
 
         print(f"✓ Using Perplexity API to generate quiz from {len(content)} characters of content")
 
@@ -92,9 +92,9 @@ class QuizGenerator:
                 print(f"❌ Model {model_name} error: {str(e)[:200]}")
                 continue
 
-        # If all models failed, fall back to demo mode
-        print(f"⚠️  All models failed, falling back to demo mode")
-        return self._generate_demo_quiz(content)
+        # If all models failed, raise an error
+        print(f"❌ All models failed to generate quiz")
+        raise ValueError("Could not generate quiz. Please try again later.")
 
     def _create_prompt(self, content: str) -> str:
         """
