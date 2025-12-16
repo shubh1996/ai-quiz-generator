@@ -1,5 +1,6 @@
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
+from .verification import VerificationMetadata, SourceInfo
 
 
 class Question(BaseModel):
@@ -11,3 +12,6 @@ class Question(BaseModel):
 
 class QuizResponse(BaseModel):
     questions: List[Question]
+    verification: Optional[VerificationMetadata] = None
+    source_info: Optional[SourceInfo] = None
+    points_awarded: Optional[int] = None

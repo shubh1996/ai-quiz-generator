@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { QuizData } from "../page";
+import VerificationBadge from "./VerificationBadge";
 
 interface QuizStepProps {
   quizData: QuizData;
@@ -61,6 +62,12 @@ export default function QuizStep({ quizData, onSubmit }: QuizStepProps) {
 
   return (
     <div className="bg-white rounded-2xl shadow-xl p-8 md:p-12">
+      {quizData.verification && (
+        <div className="mb-6">
+          <VerificationBadge verification={quizData.verification} />
+        </div>
+      )}
+
       <div className="mb-8">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-3xl font-bold text-gray-800">Step 2: Take the Quiz</h2>

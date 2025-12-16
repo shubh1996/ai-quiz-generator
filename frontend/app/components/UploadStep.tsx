@@ -2,17 +2,22 @@
 
 import { useState } from "react";
 import { QuizData } from "../page";
+import RejectionModal from "./RejectionModal";
 
 interface UploadStepProps {
   onQuizGenerated: (data: QuizData) => void;
 }
 
 export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
-  const [uploadType, setUploadType] = useState<"file" | "url">("file");
+  const [uploadType, setUploadType] = useState<"file" | "url" | "video">("file");
   const [file, setFile] = useState<File | null>(null);
   const [url, setUrl] = useState("");
+  const [videoUrl, setVideoUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showRejectionModal, setShowRejectionModal] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [rejectionConfidence, setRejectionConfidence] = useState<number | undefined>();
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -33,8 +38,10 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
         formData.append("file", file);
       } else if (uploadType === "url" && url) {
         formData.append("url", url);
+      } else if (uploadType === "video" && videoUrl) {
+        formData.append("video_url", videoUrl);
       } else {
-        setError("Please provide a file or URL");
+        setError("Please provide a file, URL, or video URL");
         setLoading(false);
         return;
       }
@@ -46,6 +53,16 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: "Failed to generate quiz" }));
+
+        // Handle rejection (403)
+        if (response.status === 403 && errorData.detail) {
+          setRejectionReason(errorData.detail.reason || errorData.detail);
+          setRejectionConfidence(errorData.detail.confidence);
+          setShowRejectionModal(true);
+          setLoading(false);
+          return;
+        }
+
         throw new Error(errorData.detail || "Failed to generate quiz");
       }
 
@@ -59,69 +76,106 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-xl p-8 md:p-12">
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold text-gray-800 mb-2">Step 1: Upload Content</h2>
-        <p className="text-gray-600">Choose a document or paste a URL to get started</p>
-      </div>
+    <>
+      <RejectionModal
+        isOpen={showRejectionModal}
+        onClose={() => setShowRejectionModal(false)}
+        reason={rejectionReason}
+        confidence={rejectionConfidence}
+      />
 
-      <div className="flex gap-4 mb-8">
-        <button
-          onClick={() => setUploadType("file")}
-          className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all ${
-            uploadType === "file"
-              ? "bg-blue-600 text-white shadow-lg"
-              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-          }`}
-        >
-          📄 Upload File
-        </button>
-        <button
-          onClick={() => setUploadType("url")}
-          className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all ${
-            uploadType === "url"
-              ? "bg-blue-600 text-white shadow-lg"
-              : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-          }`}
-        >
-          🔗 Paste URL
-        </button>
-      </div>
+      <div className="bg-white rounded-2xl shadow-xl p-8 md:p-12">
+        <div className="mb-8">
+          <h2 className="text-3xl font-bold text-gray-800 mb-2">Step 1: Upload Content</h2>
+          <p className="text-gray-600">Choose a document, URL, or video to get started</p>
+        </div>
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {uploadType === "file" ? (
-          <div>
-            <label className="block mb-2 text-sm font-medium text-gray-700">
-              Choose a document (PDF, TXT, DOCX)
-            </label>
-            <div className="relative">
+        <div className="grid grid-cols-3 gap-4 mb-8">
+          <button
+            onClick={() => setUploadType("file")}
+            className={`py-3 px-4 rounded-lg font-semibold transition-all ${
+              uploadType === "file"
+                ? "bg-blue-600 text-white shadow-lg"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            📄 Upload File
+          </button>
+          <button
+            onClick={() => setUploadType("url")}
+            className={`py-3 px-4 rounded-lg font-semibold transition-all ${
+              uploadType === "url"
+                ? "bg-blue-600 text-white shadow-lg"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            🔗 Web URL
+          </button>
+          <button
+            onClick={() => setUploadType("video")}
+            className={`py-3 px-4 rounded-lg font-semibold transition-all ${
+              uploadType === "video"
+                ? "bg-blue-600 text-white shadow-lg"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            🎥 Video URL
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {uploadType === "file" ? (
+            <div>
+              <label className="block mb-2 text-sm font-medium text-gray-700">
+                Choose a document or video file
+              </label>
+              <div className="relative">
+                <input
+                  type="file"
+                  onChange={handleFileChange}
+                  accept=".pdf,.txt,.doc,.docx,.mp4,.avi,.mov,.mkv,.webm"
+                  className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent p-3"
+                />
+              </div>
+              {file && (
+                <p className="mt-2 text-sm text-green-600">
+                  Selected: {file.name}
+                </p>
+              )}
+              <p className="mt-2 text-xs text-gray-500">
+                Supported: PDF, TXT, DOCX, MP4, AVI, MOV, MKV, WEBM
+              </p>
+            </div>
+          ) : uploadType === "url" ? (
+            <div>
+              <label className="block mb-2 text-sm font-medium text-gray-700">
+                Enter Web URL
+              </label>
               <input
-                type="file"
-                onChange={handleFileChange}
-                accept=".pdf,.txt,.doc,.docx"
-                className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent p-3"
+                type="url"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                placeholder="https://example.com/article"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium placeholder-gray-400"
               />
             </div>
-            {file && (
-              <p className="mt-2 text-sm text-green-600">
-                Selected: {file.name}
+          ) : (
+            <div>
+              <label className="block mb-2 text-sm font-medium text-gray-700">
+                Enter Video URL
+              </label>
+              <input
+                type="url"
+                value={videoUrl}
+                onChange={(e) => setVideoUrl(e.target.value)}
+                placeholder="https://youtube.com/watch?v=..."
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium placeholder-gray-400"
+              />
+              <p className="mt-2 text-xs text-gray-500">
+                Supports YouTube, Vimeo, and most video platforms
               </p>
-            )}
-          </div>
-        ) : (
-          <div>
-            <label className="block mb-2 text-sm font-medium text-gray-700">
-              Enter URL
-            </label>
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              placeholder="https://example.com/article"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 font-medium placeholder-gray-400"
-            />
-          </div>
-        )}
+            </div>
+          )}
 
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
@@ -146,7 +200,8 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
             "Generate Quiz"
           )}
         </button>
-      </form>
-    </div>
+        </form>
+      </div>
+    </>
   );
 }
