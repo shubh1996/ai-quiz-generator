@@ -46,7 +46,8 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
         return;
       }
 
-      const response = await fetch("http://localhost:8000/api/generate-quiz", {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const response = await fetch(`${apiUrl}/api/generate-quiz`, {
         method: "POST",
         body: formData,
       });
