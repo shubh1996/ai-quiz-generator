@@ -1,4 +1,5 @@
 import os
+import re
 import yt_dlp
 from openai import AsyncOpenAI
 from pathlib import Path
@@ -6,6 +7,8 @@ import tempfile
 import asyncio
 from typing import Optional, Dict
 from pydantic import BaseModel
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
 
 class VideoProcessingResult(BaseModel):
@@ -39,17 +42,100 @@ class VideoProcessor:
         else:
             return "Unknown"
 
+    def extract_youtube_video_id(self, url: str) -> Optional[str]:
+        """Extract YouTube video ID from URL"""
+        # Match various YouTube URL formats
+        patterns = [
+            r'(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})',
+            r'youtube\.com\/embed\/([a-zA-Z0-9_-]{11})',
+            r'youtube\.com\/v\/([a-zA-Z0-9_-]{11})',
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                return match.group(1)
+        return None
+
+    async def _try_youtube_transcript_api(self, url: str) -> Optional[Dict[str, any]]:
+        """
+        Try to get transcript using youtube-transcript-api.
+        This is more reliable than yt-dlp for getting transcripts as it doesn't download video.
+        """
+        try:
+            video_id = self.extract_youtube_video_id(url)
+            if not video_id:
+                return None
+
+            print(f"🔍 Attempting to fetch transcript via YouTube Transcript API for video: {video_id}")
+
+            # Get transcript
+            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
+
+            # Combine all transcript entries
+            transcript_text = " ".join([entry['text'] for entry in transcript_list])
+
+            if transcript_text:
+                print("✓ Successfully fetched transcript via YouTube Transcript API")
+                return {
+                    'transcript': transcript_text,
+                    'method': 'youtube_transcript_api'
+                }
+
+            return None
+
+        except (TranscriptsDisabled, NoTranscriptFound) as e:
+            print(f"⚠️ YouTube Transcript API failed: {str(e)}")
+            return None
+        except Exception as e:
+            print(f"⚠️ YouTube Transcript API error: {str(e)}")
+            return None
+
     async def process_video_url(self, url: str) -> VideoProcessingResult:
         """
-        Process a video URL:
-        1. Extract metadata
-        2. Try to get subtitles/captions first (faster, less blocking)
-        3. If no subtitles, download audio and transcribe with Whisper
-        4. Return result
+        Process a video URL with multiple fallback strategies:
+        1. For YouTube: Try YouTube Transcript API first (fastest, no bot detection)
+        2. Try yt-dlp to extract metadata and subtitles
+        3. If yt-dlp fails due to bot detection, use basic metadata
+        4. Fall back to audio download and Whisper transcription
         """
         try:
             platform = self.detect_platform(url)
+            title = "Unknown"
+            duration = 0
+            transcript = None
 
+            # Step 1: For YouTube videos, try YouTube Transcript API first
+            if platform == "YouTube":
+                yt_api_result = await self._try_youtube_transcript_api(url)
+                if yt_api_result:
+                    # Success! We have the transcript, now just get metadata
+                    try:
+                        # Try to get basic metadata without downloading
+                        video_id = self.extract_youtube_video_id(url)
+                        title = f"YouTube Video {video_id}" if video_id else "YouTube Video"
+
+                        # Try to get full metadata if possible
+                        with yt_dlp.YoutubeDL({'quiet': True, 'no_warnings': True}) as ydl:
+                            try:
+                                info = ydl.extract_info(url, download=False)
+                                if info:
+                                    title = info.get('title', title)
+                                    duration = info.get('duration', 0)
+                            except:
+                                pass  # If metadata fails, continue with what we have
+
+                    except:
+                        pass  # Continue with transcript even if metadata fails
+
+                    return VideoProcessingResult(
+                        transcript=yt_api_result['transcript'],
+                        title=title,
+                        duration=duration,
+                        platform=platform
+                    )
+
+            # Step 2: Try yt-dlp for non-YouTube or if Transcript API failed
             # Common options to avoid blocking
             common_opts = {
                 'quiet': True,
@@ -70,24 +156,32 @@ class VideoProcessor:
                 },
             }
 
-            # Step 1: Extract video info
-            with yt_dlp.YoutubeDL(common_opts) as ydl:
-                info = ydl.extract_info(url, download=False)
+            # Try to extract video info
+            try:
+                with yt_dlp.YoutubeDL(common_opts) as ydl:
+                    info = ydl.extract_info(url, download=False)
 
-                if not info:
-                    raise Exception("Failed to extract video information")
+                    if not info:
+                        raise Exception("Failed to extract video information")
 
-                title = info.get('title', 'Unknown')
-                duration = info.get('duration', 0)
+                    title = info.get('title', 'Unknown')
+                    duration = info.get('duration', 0)
 
-                # Check duration limit
-                if duration > self.max_duration:
-                    raise Exception(f"Video too long ({duration}s). Maximum allowed: {self.max_duration}s")
+                    # Check duration limit
+                    if duration > self.max_duration:
+                        raise Exception(f"Video too long ({duration}s). Maximum allowed: {self.max_duration}s")
+            except Exception as e:
+                # If bot detection blocks us, we can still try to continue
+                if "bot" in str(e).lower() or "sign in" in str(e).lower():
+                    print(f"⚠️ yt-dlp metadata extraction blocked by bot detection, continuing with transcript attempts...")
+                else:
+                    raise
 
-            # Step 2: Try to extract subtitles/captions first
-            transcript = await self._try_extract_subtitles(url, common_opts)
+            # Step 3: Try to extract subtitles/captions
+            if not transcript:
+                transcript = await self._try_extract_subtitles(url, common_opts)
 
-            # Step 3: If no subtitles, fall back to audio transcription
+            # Step 4: If no subtitles, fall back to audio transcription
             if not transcript:
                 print("⚠️ No subtitles found, attempting audio download and transcription...")
                 transcript = await self._transcribe_from_audio(url, common_opts)
