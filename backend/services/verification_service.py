@@ -75,6 +75,11 @@ YOUTUBE_EDU_CHANNELS = [
     "Physics Girl",
     "SmarterEveryDay",
     "MinutePhysics",
+    "Google Developers",
+    "Google for Developers",
+    "Android Developers",
+    "Chrome Developers",
+    "Firebase",
 ]
 
 
