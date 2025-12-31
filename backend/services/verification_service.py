@@ -3,7 +3,8 @@ import re
 from urllib.parse import urlparse
 from datetime import datetime
 from typing import Optional, Dict
-from openai import AsyncOpenAI
+import httpx
+import os
 
 from models.verification import (
     VerificationStatus,
@@ -123,8 +124,8 @@ Return JSON format:
 class VerificationService:
     """Service for verifying educational content quality"""
 
-    def __init__(self, openai_api_key: str):
-        self.openai_client = AsyncOpenAI(api_key=openai_api_key)
+    def __init__(self, openai_api_key: str = None):
+        self.perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
         self.confidence_threshold = 70.0  # Minimum confidence to accept content
 
     def _extract_domain(self, url: str) -> str:
@@ -173,7 +174,7 @@ class VerificationService:
         metadata: Optional[Dict] = None
     ) -> EducationalAnalysis:
         """
-        Use GPT-4 to analyze if content is educational and high-quality
+        Use Perplexity API to analyze if content is educational and high-quality
         """
         try:
             # Prepare content sample (first 3000 characters)
@@ -190,25 +191,50 @@ CONTENT SAMPLE (first 3000 characters):
 
 Provide your analysis in JSON format."""
 
-            # Call GPT-4
-            response = await self.openai_client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": EDUCATIONAL_CLASSIFIER_SYSTEM_PROMPT
+            # Call Perplexity API
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    "https://api.perplexity.ai/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.perplexity_api_key}",
+                        "Content-Type": "application/json"
                     },
-                    {
-                        "role": "user",
-                        "content": user_prompt
-                    }
-                ],
-                temperature=0.3,  # Low temperature for consistent classification
-                response_format={"type": "json_object"}
-            )
+                    json={
+                        "model": "sonar",
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": EDUCATIONAL_CLASSIFIER_SYSTEM_PROMPT + " Return ONLY valid JSON without markdown formatting."
+                            },
+                            {
+                                "role": "user",
+                                "content": user_prompt
+                            }
+                        ],
+                        "temperature": 0.3,
+                        "max_tokens": 1000
+                    },
+                    timeout=30.0
+                )
+
+            if response.status_code != 200:
+                raise Exception(f"Perplexity API error: {response.status_code} - {response.text}")
+
+            result = response.json()
+            analysis_text = result['choices'][0]['message']['content']
+
+            # Clean markdown formatting if present
+            analysis_text = analysis_text.strip()
+            if analysis_text.startswith('```json'):
+                analysis_text = analysis_text[7:]
+            if analysis_text.startswith('```'):
+                analysis_text = analysis_text[3:]
+            if analysis_text.endswith('```'):
+                analysis_text = analysis_text[:-3]
+            analysis_text = analysis_text.strip()
 
             # Parse response
-            analysis_data = json.loads(response.choices[0].message.content)
+            analysis_data = json.loads(analysis_text)
 
             return EducationalAnalysis(**analysis_data)
 
@@ -216,19 +242,7 @@ Provide your analysis in JSON format."""
             # Fallback: return analysis based on error type
             print(f"⚠️ AI analysis failed: {str(e)}")
 
-            # Check if it's a quota/billing error
-            if "quota" in str(e).lower() or "429" in str(e):
-                print("⚠️ OpenAI API quota exceeded - content will be unverified")
-                return EducationalAnalysis(
-                    is_educational=False,  # Will trigger REJECTED status
-                    confidence=0.0,
-                    topics=["API quota exceeded"],
-                    educational_indicators=[],
-                    non_educational_flags=["API quota exceeded"],
-                    reasoning=f"OpenAI API quota exceeded. Please add credits at https://platform.openai.com/account/billing to enable content verification."
-                )
-
-            # For other errors, return cautious analysis that rejects
+            # For errors, return cautious analysis that rejects
             return EducationalAnalysis(
                 is_educational=False,
                 confidence=0.0,

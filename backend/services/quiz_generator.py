@@ -14,12 +14,12 @@ class QuizGenerator:
         if not self.api_key:
             print("WARNING: PERPLEXITY_API_KEY not set. Using demo mode.")
         self.base_url = "https://api.perplexity.ai/chat/completions"
-        # Try different model names in order
+        # Try different model names in order (updated for 2025 Perplexity models)
+        # Reference: https://docs.perplexity.ai/getting-started/models
         self.models_to_try = [
-            "sonar",
-            "sonar-small-chat",
-            "llama-3.1-sonar-small-128k-chat",
-            "llama-3.1-8b-instruct"
+            "sonar",              # Lightweight, grounded search model
+            "sonar-pro",          # Deeper retrieval with follow-ups
+            "sonar-reasoning"     # Real-time reasoning with search
         ]
 
     async def generate_quiz(self, content: str) -> QuizResponse:
