@@ -119,7 +119,12 @@ class VideoProcessor:
             print(f"⚠️ YouTube Transcript API failed: {str(e)}")
             return None
         except Exception as e:
-            print(f"⚠️ YouTube Transcript API error: {str(e)}")
+            # Detect specific YouTube blocking/parsing errors
+            error_msg = str(e)
+            if "ParseError" in str(type(e)) or "no element found" in error_msg:
+                print(f"⚠️ YouTube Transcript API: Video transcript is blocked or unavailable")
+            else:
+                print(f"⚠️ YouTube Transcript API error: {error_msg}")
             return None
 
     async def process_video_url(self, url: str) -> VideoProcessingResult:
@@ -225,7 +230,18 @@ class VideoProcessor:
             )
 
         except yt_dlp.utils.DownloadError as e:
-            raise Exception(f"Failed to download video: {str(e)}")
+            error_msg = str(e)
+            # Provide user-friendly error messages for common issues
+            if "bot" in error_msg.lower() or "sign in" in error_msg.lower():
+                raise Exception(
+                    "YouTube has blocked access to this video. This can happen with certain videos. "
+                    "Workarounds: 1) Use a different educational video from verified channels, "
+                    "2) Download the video manually and upload the file instead, "
+                    "3) Try a video with captions/subtitles enabled. "
+                    "Educational channels like Khan Academy, CrashCourse, and TED-Ed usually work best."
+                )
+            else:
+                raise Exception(f"Failed to download video: {error_msg}")
         except Exception as e:
             raise Exception(f"Video processing error: {str(e)}")
 
