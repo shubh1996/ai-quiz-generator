@@ -18,9 +18,10 @@ These educational channels typically have captions/transcripts enabled and work 
 - **Programming with Mosh** - https://www.youtube.com/@programmingwithmosh
 - **The Net Ninja** - https://www.youtube.com/@NetNinja
 
-### Test Videos (Always Work)
-- First YouTube Video: https://www.youtube.com/watch?v=jNQXAC9IVRw ❌ (Currently blocked)
-- Khan Academy Sample: https://www.youtube.com/watch?v=5hpLjDIc6kI ✅
+### Test Videos
+- ❌ YouTube URLs are currently heavily blocked (as of Jan 2026)
+- ✅ **Use file uploads instead** - Download videos and upload .mp4 files
+- ✅ Vimeo videos work better than YouTube
 
 ---
 
