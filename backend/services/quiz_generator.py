@@ -1,7 +1,9 @@
 import os
 import httpx
 import json
-from models.quiz import QuizResponse, Question
+from models.quiz import QuizResponse, Question, Answer, QuizData, ContentMetadata
+from datetime import datetime
+import uuid
 
 
 class QuizGenerator:
@@ -22,9 +24,10 @@ class QuizGenerator:
             "sonar-reasoning"     # Real-time reasoning with search
         ]
 
-    async def generate_quiz(self, content: str) -> QuizResponse:
+    async def generate_quiz(self, content: str, content_metadata: ContentMetadata = None, job_id: str = None) -> dict:
         """
         Generate a 5-question MCQ quiz from the provided content
+        Returns raw dict for the API to wrap with additional metadata
         """
         if not self.api_key:
             print("❌ No API key found")
@@ -82,7 +85,8 @@ class QuizGenerator:
                         quiz_data = json.loads(quiz_text)
                         print(f"✓ Successfully generated {len(quiz_data['questions'])} questions")
 
-                        return QuizResponse(**quiz_data)
+                        # Return raw quiz data (will be wrapped by API endpoint)
+                        return quiz_data
                     else:
                         error_detail = response.text
                         print(f"❌ Model {model_name} failed ({response.status_code}): {error_detail[:200]}")
@@ -120,10 +124,15 @@ Generate the questions in the following JSON format:
 {{
     "questions": [
         {{
-            "id": 1,
             "question": "Question text here?",
-            "options": ["Option A", "Option B", "Option C", "Option D"],
-            "correctAnswer": 0
+            "num_answers": 5,
+            "answers": [
+                {{"answer": "Correct answer text", "weight": 2}},
+                {{"answer": "Partially correct or close answer", "weight": 1}},
+                {{"answer": "Plausible but incorrect answer", "weight": 0}},
+                {{"answer": "Incorrect distractor", "weight": 0}},
+                {{"answer": "Incorrect distractor", "weight": 0}}
+            ]
         }}
     ]
 }}
@@ -132,11 +141,15 @@ Requirements:
 1. Each question MUST test knowledge of SPECIFIC FACTS, CONCEPTS, or DETAILS from the content above
 2. Questions should cover different key points or sections from the content
 3. Make questions clear and unambiguous
-4. Each question must have exactly 4 distinct options
-5. Include plausible wrong answers that someone who didn't read carefully might choose
-6. correctAnswer is the index (0-3) of the correct option
+4. Each question must have exactly 5 distinct answer options
+5. Weight system:
+   - weight: 2 = Fully correct answer (ONLY ONE per question)
+   - weight: 1 = Partially correct or demonstrates partial understanding (0-1 per question)
+   - weight: 0 = Incorrect answers
+6. Include plausible wrong answers that someone who didn't read carefully might choose
 7. Vary difficulty: include 2 easy, 2 medium, and 1 challenging question
-8. Return ONLY valid JSON without any markdown formatting, code blocks, or additional text
+8. Randomize the order of answers (don't always put correct answer first)
+9. Return ONLY valid JSON without any markdown formatting, code blocks, or additional text
 
 Examples of GOOD questions (specific to content):
 - "According to the document, what year was [specific event] mentioned?"

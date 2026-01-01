@@ -8,8 +8,11 @@ from services.document_processor import DocumentProcessor
 from services.quiz_generator import QuizGenerator
 from services.video_processor import VideoProcessor
 from services.verification_service import VerificationService
-from models.quiz import QuizResponse
+from services.content_metadata_service import ContentMetadataService
+from models.quiz import QuizResponse, QuizData
 from models.verification import VerificationStatus, SourceInfo
+from datetime import datetime
+import uuid
 
 load_dotenv()
 
@@ -39,6 +42,7 @@ app.add_middleware(
 openai_api_key = os.getenv("OPENAI_API_KEY")
 document_processor = DocumentProcessor(openai_api_key=openai_api_key)
 quiz_generator = QuizGenerator()
+content_metadata_service = ContentMetadataService()
 
 # Initialize video and verification services if OpenAI key available
 video_processor = VideoProcessor(openai_api_key) if openai_api_key else None
@@ -50,11 +54,12 @@ async def root():
     return {"message": "Quiz Generator API is running"}
 
 
-@app.post("/api/generate-quiz", response_model=QuizResponse)
+@app.post("/api/generate-quiz")
 async def generate_quiz(
     file: Optional[UploadFile] = File(None),
     url: Optional[str] = Form(None),
-    video_url: Optional[str] = Form(None)
+    video_url: Optional[str] = Form(None),
+    job_id: Optional[str] = Form(None)
 ):
     """
     Generate a quiz from:
@@ -160,9 +165,19 @@ async def generate_quiz(
                         }
                     )
 
+        # Generate content metadata
+        print(f"📋 Generating content metadata...")
+        content_metadata = await content_metadata_service.generate_metadata(
+            content=content,
+            source_type=source_info.source_type,
+            source_identifier=source_info.source_identifier,
+            title=source_info.title,
+            duration_seconds=source_info.duration
+        )
+
         # Generate quiz
         print(f"🎯 Generating quiz...")
-        quiz_data = await quiz_generator.generate_quiz(content)
+        raw_quiz_data = await quiz_generator.generate_quiz(content)
 
         # Calculate points based on verification status
         if verification:
@@ -175,21 +190,46 @@ async def generate_quiz(
         else:
             points_awarded = 50  # No verification available
 
-        # Attach metadata to response
-        quiz_data.verification = verification
-        quiz_data.source_info = source_info
-        quiz_data.points_awarded = points_awarded
+        # Build final response in new format
+        response = {
+            "success": True,
+            "job_id": job_id if job_id else str(uuid.uuid4()),
+            "content": content_metadata.dict(),
+            "quiz": {
+                "num_quiz_questions": len(raw_quiz_data["questions"]),
+                "questions": raw_quiz_data["questions"]
+            },
+            "verification": verification.dict() if verification else None,
+            "source_info": source_info.dict() if source_info else None,
+            "points_awarded": points_awarded,
+            "generated_at": datetime.utcnow().isoformat() + "Z"
+        }
 
         print(f"✅ Quiz generated successfully!")
-        return quiz_data
+        return response
 
-    except HTTPException:
-        raise
+    except HTTPException as e:
+        # Re-raise HTTP exceptions but ensure they have success: false
+        if e.status_code == 403 and isinstance(e.detail, dict):
+            # Content rejection - keep special format
+            raise
+        else:
+            # Other HTTP errors - standardize
+            raise HTTPException(
+                status_code=e.status_code,
+                detail={"success": False, "detail": e.detail if isinstance(e.detail, str) else str(e.detail)}
+            )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(
+            status_code=400,
+            detail={"success": False, "detail": str(e)}
+        )
     except Exception as e:
         print(f"❌ Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500,
+            detail={"success": False, "detail": str(e)}
+        )
 
 
 @app.get("/health")
