@@ -47,10 +47,19 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
       }
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-      const response = await fetch(`${apiUrl}/api/generate-quiz`, {
-        method: "POST",
-        body: formData,
-      });
+
+      // Add timeout to prevent hanging requests (2 minutes for video/document processing)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+
+      try {
+        const response = await fetch(`${apiUrl}/api/generate-quiz`, {
+          method: "POST",
+          body: formData,
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ detail: "Failed to generate quiz" }));
@@ -67,10 +76,28 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
         throw new Error(errorData.detail || "Failed to generate quiz");
       }
 
-      const data = await response.json();
-      onQuizGenerated(data);
+        const data = await response.json();
+        onQuizGenerated(data);
+      } catch (fetchErr) {
+        clearTimeout(timeoutId);
+        if (fetchErr instanceof Error && fetchErr.name === 'AbortError') {
+          throw new Error("Request timed out. The document/video may be too large or the server is taking too long to process.");
+        }
+        throw fetchErr;
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      console.error('Quiz generation error:', err);
+
+      // Provide helpful error messages
+      if (err instanceof Error) {
+        if (err.message.includes('Failed to fetch') || err.message.includes('NetworkError')) {
+          setError(`Cannot connect to server. Please check:\n1. Backend URL is configured correctly\n2. Server is running\n3. Internet connection is active\n\nAPI URL: ${apiUrl}`);
+        } else {
+          setError(err.message);
+        }
+      } else {
+        setError("An unexpected error occurred");
+      }
     } finally {
       setLoading(false);
     }
