@@ -6,38 +6,63 @@ import QuizStep from "./components/QuizStep";
 import ResultsStep from "./components/ResultsStep";
 import PointsDisplay from "./components/PointsDisplay";
 
+export type Answer = {
+  answer: string;
+  weight: number; // 0 = incorrect, 1 = partially correct, 2 = correct
+};
+
 export type Question = {
-  id: number;
   question: string;
-  options: string[];
-  correctAnswer: number;
+  num_answers: number;
+  answers: Answer[];
+};
+
+export type ContentMetadata = {
+  title: string;
+  description: string;
+  media_link: string;
+  duration?: number; // in minutes
+  suggested_categories: string[];
+  suggested_media_type: string;
+  creator_name?: string;
+  thumbnail_url?: string;
 };
 
 export type VerificationStatus = "verified" | "ai_verified" | "rejected" | "pending";
 
 export type VerificationMetadata = {
   status: VerificationStatus;
-  confidenceScore?: number;
+  confidence_score?: number;
   platform?: string;
-  rejectionReason?: string;
-  verifiedAt: string;
-  verificationMethod: string;
+  rejection_reason?: string;
+  verified_at: string;
+  verification_method: string;
 };
 
 export type SourceInfo = {
-  sourceType: string;
-  sourceIdentifier: string;
+  source_type: string;
+  source_identifier: string;
   title?: string;
   duration?: number;
-  transcriptLength?: number;
+  transcript_length?: number;
 };
 
-export type QuizData = {
-  questions: Question[];
+export type QuizResponse = {
+  success: boolean;
+  job_id: string;
+  content: ContentMetadata;
+  quiz: {
+    num_quiz_questions: number;
+    questions: Question[];
+  };
   verification?: VerificationMetadata;
-  sourceInfo?: SourceInfo;
-  pointsAwarded?: number;
+  source_info?: SourceInfo;
+  points_awarded?: number;
+  generated_at: string;
 };
+
+// Legacy type for internal use
+export type QuizData = QuizResponse;
 
 export default function Home() {
   const [currentStep, setCurrentStep] = useState<"upload" | "quiz" | "results">("upload");

@@ -5,15 +5,15 @@ import { QuizData } from "../page";
 import { PointsManager } from "../utils/pointsManager";
 
 interface ResultsStepProps {
-  score: number;
+  score: number; // This is now a percentage (0-100)
   totalQuestions: number;
   quizData: QuizData;
   onRestart: () => void;
 }
 
 export default function ResultsStep({ score, totalQuestions, quizData, onRestart }: ResultsStepProps) {
-  const passed = score >= 4;
-  const percentage = (score / totalQuestions) * 100;
+  const percentage = score; // Score is already a percentage
+  const passed = percentage >= 80; // 80% to pass (4/5 questions correct)
   const [pointsEarned, setPointsEarned] = useState(0);
   const [pointsBreakdown, setPointsBreakdown] = useState({
     base: 0,
@@ -25,22 +25,24 @@ export default function ResultsStep({ score, totalQuestions, quizData, onRestart
   useEffect(() => {
     const manager = new PointsManager();
 
-    // Only calculate and award points if user passed (4 or more correct)
+    // Use points awarded from API, or calculate locally if not provided
     if (passed) {
-      // Calculate points
-      const basePoints = score * 10;
+      // Use API points if available
+      const apiPoints = quizData.points_awarded || 0;
 
+      // Calculate local bonus points
+      const basePoints = Math.round(percentage); // Base points from percentage score
+      const perfectBonus = percentage === 100 ? 100 : 0;
+      const history = manager.getQuizzes();
+      const firstQuizBonus = history.length === 0 ? 50 : 0;
+
+      // Determine verification bonus
       let verificationBonus = 0;
       if (quizData.verification?.status === "verified") {
         verificationBonus = Math.floor(basePoints * 0.5);
       } else if (quizData.verification?.status === "ai_verified") {
         verificationBonus = Math.floor(basePoints * 0.3);
       }
-
-      const perfectBonus = score === totalQuestions ? 100 : 0;
-
-      const history = manager.getQuizzes();
-      const firstQuizBonus = history.length === 0 ? 50 : 0;
 
       const total = basePoints + verificationBonus + perfectBonus + firstQuizBonus;
 
@@ -56,10 +58,10 @@ export default function ResultsStep({ score, totalQuestions, quizData, onRestart
       manager.addPoints({
         id: Date.now().toString(),
         completedAt: new Date().toISOString(),
-        score,
+        score: percentage,
         totalQuestions,
         pointsEarned: total,
-        sourceType: quizData.sourceInfo?.sourceType || "unknown",
+        sourceType: quizData.source_info?.source_type || "unknown",
         verificationStatus: quizData.verification?.status || "unknown"
       });
 
@@ -75,7 +77,7 @@ export default function ResultsStep({ score, totalQuestions, quizData, onRestart
         first: 0
       });
     }
-  }, [score, totalQuestions, quizData, passed]);
+  }, [percentage, totalQuestions, quizData, passed]);
 
   return (
     <div className="bg-white rounded-2xl shadow-xl p-8 md:p-12">
@@ -111,10 +113,10 @@ export default function ResultsStep({ score, totalQuestions, quizData, onRestart
         <div className="mb-8">
           <div className="inline-block bg-gradient-to-r from-blue-50 to-purple-50 rounded-2xl p-8">
             <div className="text-6xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
-              {score}/{totalQuestions}
+              {Math.round(percentage)}%
             </div>
-            <div className="text-gray-600 font-semibold">Questions Correct</div>
-            <div className="text-2xl font-bold text-gray-700 mt-2">{percentage}%</div>
+            <div className="text-gray-600 font-semibold">Your Score</div>
+            <div className="text-lg text-gray-600 mt-2">Out of {totalQuestions} questions</div>
           </div>
         </div>
 
@@ -126,7 +128,7 @@ export default function ResultsStep({ score, totalQuestions, quizData, onRestart
 
             <div className="space-y-2 mb-4">
               <div className="flex justify-between text-sm">
-                <span className="text-gray-700">Base points ({score} correct × 10)</span>
+                <span className="text-gray-700">Base points ({Math.round(percentage)}% score)</span>
                 <span className="font-semibold text-gray-900">+{pointsBreakdown.base}</span>
               </div>
 
@@ -180,8 +182,8 @@ export default function ResultsStep({ score, totalQuestions, quizData, onRestart
           </h3>
           <p className={passed ? "text-green-700" : "text-red-700"}>
             {passed
-              ? "You answered 4 or more questions correctly. Great job!"
-              : "You need to answer at least 4 questions correctly to pass."}
+              ? "You scored 80% or higher. Great job!"
+              : "You need to score at least 80% to pass."}
           </p>
         </div>
 

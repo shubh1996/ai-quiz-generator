@@ -47,21 +47,41 @@ export default function QuizStep({ quizData, onSubmit }: QuizStepProps) {
       return;
     }
 
-    let correctCount = 0;
-    quizData.questions.forEach((question, index) => {
-      if (selectedAnswers[index] === question.correctAnswer) {
-        correctCount++;
+    // Calculate score based on weights
+    let totalScore = 0;
+    const maxScore = quizData.quiz.questions.length * 2; // Max weight is 2 per question
+
+    quizData.quiz.questions.forEach((question, index) => {
+      const selectedIndex = selectedAnswers[index];
+      if (selectedIndex !== undefined) {
+        const selectedAnswer = question.answers[selectedIndex];
+        totalScore += selectedAnswer.weight;
       }
     });
 
-    onSubmit(correctCount);
+    // Convert to percentage for display
+    const percentageScore = Math.round((totalScore / maxScore) * 100);
+    onSubmit(percentageScore);
   };
 
-  const question = quizData.questions[currentQuestion];
-  const isLastQuestion = currentQuestion === quizData.questions.length - 1;
+  const question = quizData.quiz.questions[currentQuestion];
+  const isLastQuestion = currentQuestion === quizData.quiz.questions.length - 1;
 
   return (
     <div className="bg-white rounded-2xl shadow-xl p-8 md:p-12">
+      {/* Display content metadata */}
+      <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg">
+        <h4 className="font-bold text-gray-800 mb-2">{quizData.content.title}</h4>
+        <p className="text-sm text-gray-600 mb-2">{quizData.content.description}</p>
+        <div className="flex gap-2 flex-wrap">
+          {quizData.content.suggested_categories.map((cat, idx) => (
+            <span key={idx} className="text-xs bg-white px-2 py-1 rounded-full text-gray-700">
+              {cat}
+            </span>
+          ))}
+        </div>
+      </div>
+
       {quizData.verification && (
         <div className="mb-6">
           <VerificationBadge verification={quizData.verification} />
@@ -72,13 +92,13 @@ export default function QuizStep({ quizData, onSubmit }: QuizStepProps) {
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-3xl font-bold text-gray-800">Step 2: Take the Quiz</h2>
           <span className="text-sm font-semibold text-blue-600 bg-blue-50 px-4 py-2 rounded-full">
-            Question {currentQuestion + 1} of {quizData.questions.length}
+            Question {currentQuestion + 1} of {quizData.quiz.questions.length}
           </span>
         </div>
         <div className="w-full bg-gray-200 rounded-full h-2">
           <div
             className="bg-gradient-to-r from-blue-600 to-purple-600 h-2 rounded-full transition-all"
-            style={{ width: `${((currentQuestion + 1) / quizData.questions.length) * 100}%` }}
+            style={{ width: `${((currentQuestion + 1) / quizData.quiz.questions.length) * 100}%` }}
           ></div>
         </div>
       </div>
@@ -89,7 +109,7 @@ export default function QuizStep({ quizData, onSubmit }: QuizStepProps) {
         </h3>
 
         <div className="space-y-3">
-          {question.options.map((option, index) => (
+          {question.answers.map((answerObj, index) => (
             <button
               key={index}
               onClick={() => handleAnswerSelect(index)}
@@ -113,7 +133,7 @@ export default function QuizStep({ quizData, onSubmit }: QuizStepProps) {
                     </svg>
                   )}
                 </div>
-                <span className="flex-1 text-gray-800 font-medium">{option}</span>
+                <span className="flex-1 text-gray-800 font-medium">{answerObj.answer}</span>
               </div>
             </button>
           ))}
