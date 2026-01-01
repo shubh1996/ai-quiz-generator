@@ -10,6 +10,14 @@ from pydantic import BaseModel
 from youtube_transcript_api import YouTubeTranscriptApi
 from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
+# Import YouTube API service (optional - will gracefully handle if not available)
+try:
+    from services.youtube_api_service import YouTubeAPIService
+    YOUTUBE_API_AVAILABLE = True
+except ImportError:
+    YOUTUBE_API_AVAILABLE = False
+    print("⚠️ google-api-python-client not installed - YouTube API disabled")
+
 
 class VideoProcessingResult(BaseModel):
     """Result of video processing"""
@@ -26,6 +34,17 @@ class VideoProcessor:
         self.openai_client = AsyncOpenAI(api_key=openai_api_key)
         self.temp_dir = tempfile.mkdtemp(prefix="quiz_videos_")
         self.max_duration = int(os.getenv("MAX_VIDEO_DURATION_SECONDS", "7200"))  # 2 hours default
+
+        # Initialize YouTube API service if available and configured
+        self.youtube_api = None
+        if YOUTUBE_API_AVAILABLE:
+            try:
+                self.youtube_api = YouTubeAPIService()
+                print("✓ YouTube Data API v3 service enabled")
+            except ValueError as e:
+                print(f"⚠️ YouTube API key not configured: {e}")
+            except Exception as e:
+                print(f"⚠️ YouTube API initialization failed: {e}")
 
     def detect_platform(self, url: str) -> str:
         """Detect video platform from URL"""
@@ -59,14 +78,30 @@ class VideoProcessor:
 
     async def _try_youtube_transcript_api(self, url: str) -> Optional[Dict[str, any]]:
         """
-        Try to get transcript using youtube-transcript-api.
-        This is more reliable than yt-dlp for getting transcripts as it doesn't download video.
+        Try to get transcript using multiple methods:
+        1. YouTube Data API v3 (if configured) - verifies video exists and has captions
+        2. youtube-transcript-api - fetches actual captions (free, no auth needed)
         """
         try:
             video_id = self.extract_youtube_video_id(url)
             if not video_id:
                 return None
 
+            # Method 1: Try YouTube Data API v3 first (if available)
+            if self.youtube_api:
+                print(f"🔍 Checking video via YouTube Data API v3: {video_id}")
+                api_info = self.youtube_api.get_video_info(url)
+
+                if api_info:
+                    if not api_info.get('has_captions'):
+                        print(f"⚠️ Video has no captions according to YouTube API")
+                        return None
+                    else:
+                        print(f"✓ YouTube API confirmed captions exist, attempting download...")
+                else:
+                    print(f"⚠️ Could not verify video via YouTube API, trying anyway...")
+
+            # Method 2: youtube-transcript-api (free, no auth, but may be blocked)
             print(f"🔍 Attempting to fetch transcript via YouTube Transcript API for video: {video_id}")
 
             # Try multiple language codes and auto-generated captions
