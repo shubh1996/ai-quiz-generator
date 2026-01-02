@@ -148,7 +148,6 @@ async def generate_quiz(
                     # Allow content to pass as unverified when quota exceeded
                     print(f"⚠️ API quota exceeded - allowing content as unverified")
                     from models.verification import VerificationMetadata
-                    from datetime import datetime
                     verification = VerificationMetadata(
                         status=VerificationStatus.PENDING,
                         verification_method="api_unavailable",
