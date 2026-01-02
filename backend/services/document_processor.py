@@ -6,6 +6,8 @@ import requests
 import io
 import os
 import tempfile
+import time
+import random
 from openai import AsyncOpenAI
 
 
@@ -39,33 +41,94 @@ class DocumentProcessor:
 
     async def process_url(self, url: str) -> str:
         """
-        Extract text content from a URL
+        Extract text content from a URL with retry logic and multiple User-Agent strategies
         """
+        # Multiple realistic User-Agents to rotate through
+        user_agents = [
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0',
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+        ]
+
+        last_error = None
+
+        # Try up to 3 times with different strategies
+        for attempt in range(3):
+            try:
+                # Rotate User-Agent on each attempt
+                selected_ua = user_agents[attempt % len(user_agents)]
+
+                # Build headers
+                headers = {
+                    'User-Agent': selected_ua,
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'DNT': '1',
+                    'Connection': 'keep-alive',
+                    'Upgrade-Insecure-Requests': '1',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Cache-Control': 'max-age=0',
+                }
+
+                # Add Chrome-specific headers only for Chrome UAs
+                if 'Chrome' in selected_ua and 'Edg' not in selected_ua:
+                    headers.update({
+                        'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+                        'sec-ch-ua-mobile': '?0',
+                        'sec-ch-ua-platform': '"Windows"' if 'Windows' in selected_ua else '"macOS"',
+                    })
+
+                print(f"📡 Fetching URL (attempt {attempt + 1}/3): {url}")
+
+                # Use session with cookies for persistence
+                session = requests.Session()
+                session.headers.update(headers)
+
+                # Add small delay between retries to appear more human
+                if attempt > 0:
+                    delay = random.uniform(1.0, 2.5)
+                    print(f"⏳ Waiting {delay:.1f}s before retry...")
+                    time.sleep(delay)
+
+                response = session.get(url, timeout=25, allow_redirects=True, verify=True)
+                response.raise_for_status()
+                print(f"✓ Successfully fetched URL (status {response.status_code})")
+
+                # Successfully fetched, break out of retry loop
+                break
+
+            except requests.exceptions.HTTPError as e:
+                last_error = e
+                if e.response.status_code == 403:
+                    print(f"⚠️ Attempt {attempt + 1} failed with 403 Forbidden")
+                    if attempt < 2:  # Don't continue message on last attempt
+                        continue
+                else:
+                    # Non-403 errors, don't retry
+                    raise ValueError(f"HTTP error {e.response.status_code}: {e.response.reason}")
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                last_error = e
+                print(f"⚠️ Attempt {attempt + 1} failed: {type(e).__name__}")
+                if attempt < 2:
+                    continue
+
+        # If we exhausted all retries, raise the last error
+        if last_error:
+            if isinstance(last_error, requests.exceptions.HTTPError):
+                raise ValueError(f"HTTP error {last_error.response.status_code}: {last_error.response.reason}")
+            elif isinstance(last_error, requests.exceptions.Timeout):
+                raise ValueError(f"Request timed out. The URL took too long to respond.")
+            elif isinstance(last_error, requests.exceptions.ConnectionError):
+                raise ValueError(f"Could not connect to the URL. Please check your internet connection.")
+
+        # Parse the content
         try:
-            # Add comprehensive headers to mimic a real browser
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1',
-                'Cache-Control': 'max-age=0',
-                'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-                'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"macOS"',
-            }
-
-            print(f"📡 Fetching URL: {url}")
-            response = requests.get(url, headers=headers, timeout=20, allow_redirects=True, verify=True)
-            response.raise_for_status()
-            print(f"✓ Successfully fetched URL (status {response.status_code})")
-
             soup = BeautifulSoup(response.content, 'html.parser')
 
             # Remove unwanted elements
@@ -101,14 +164,8 @@ class DocumentProcessor:
             print(f"✓ Extracted {len(text)} characters from URL")
             return text
 
-        except requests.exceptions.Timeout:
-            raise ValueError(f"Request timed out. The URL took too long to respond.")
-        except requests.exceptions.ConnectionError:
-            raise ValueError(f"Could not connect to the URL. Please check your internet connection.")
-        except requests.exceptions.HTTPError as e:
-            raise ValueError(f"HTTP error {e.response.status_code}: {e.response.reason}")
         except Exception as e:
-            raise ValueError(f"Failed to fetch content from URL: {str(e)}")
+            raise ValueError(f"Failed to parse content from URL: {str(e)}")
 
     def _extract_from_pdf(self, content: bytes) -> str:
         """
