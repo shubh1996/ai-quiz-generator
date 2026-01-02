@@ -28,7 +28,7 @@ export default function QuizStep({ quizData, onSubmit }: QuizStepProps) {
       return;
     }
 
-    if (currentQuestion < quizData.questions.length - 1) {
+    if (currentQuestion < quizData.quiz.questions.length - 1) {
       setCurrentQuestion(currentQuestion + 1);
       setShowError(false);
     }
