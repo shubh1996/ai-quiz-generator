@@ -9,6 +9,7 @@ from services.quiz_generator import QuizGenerator
 from services.video_processor import VideoProcessor
 from services.verification_service import VerificationService
 from services.content_metadata_service import ContentMetadataService
+from services.content_safety_service import ContentSafetyService
 from models.quiz import QuizResponse, QuizData
 from models.verification import VerificationStatus, SourceInfo
 from datetime import datetime
@@ -43,6 +44,7 @@ openai_api_key = os.getenv("OPENAI_API_KEY")
 document_processor = DocumentProcessor(openai_api_key=openai_api_key)
 quiz_generator = QuizGenerator()
 content_metadata_service = ContentMetadataService()
+content_safety_service = ContentSafetyService()
 
 # Initialize video and verification services if OpenAI key available
 video_processor = VideoProcessor(openai_api_key) if openai_api_key else None
@@ -59,7 +61,8 @@ async def generate_quiz(
     file: Optional[UploadFile] = File(None),
     url: Optional[str] = Form(None),
     video_url: Optional[str] = Form(None),
-    job_id: Optional[str] = Form(None)
+    job_id: Optional[str] = Form(None),
+    age_mode: Optional[str] = Form("18+")  # "kids" or "18+"
 ):
     """
     Generate a quiz from:
@@ -67,7 +70,10 @@ async def generate_quiz(
     - Web URL
     - Video URL (YouTube, Vimeo, any platform)
 
-    Includes educational content verification and points calculation
+    Parameters:
+    - age_mode: "kids" for under-18 (strict filtering) or "18+" for adults (basic filtering)
+
+    Includes educational content verification, content safety filtering, and points calculation
     """
     if not file and not url and not video_url:
         raise HTTPException(
@@ -130,6 +136,35 @@ async def generate_quiz(
                 status_code=400,
                 detail="The provided content is too short to generate a quiz"
             )
+
+        # CRITICAL: Content safety check based on age mode
+        print(f"🛡️ Checking content safety (age_mode: {age_mode})...")
+        safety_check = await content_safety_service.check_content_safety(
+            content=content,
+            age_mode=age_mode,
+            source_url=video_url or url
+        )
+
+        if not safety_check.get("is_safe", False):
+            # Content is inappropriate for the selected age mode
+            rejection_msg = safety_check.get("rejection_reason", "Content contains inappropriate material")
+            flagged_topics = safety_check.get("flagged_topics", [])
+
+            print(f"🚫 SAFETY BLOCK: {rejection_msg}")
+            print(f"   Flagged topics: {', '.join(flagged_topics)}")
+
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "Content Safety Violation",
+                    "reason": rejection_msg,
+                    "flagged_topics": flagged_topics,
+                    "age_mode": age_mode,
+                    "message": f"This content is not appropriate for {age_mode} mode"
+                }
+            )
+
+        print(f"✅ Content passed safety check (confidence: {safety_check.get('confidence', 0)}%)")
 
         # Verify educational quality (if verification service available)
         verification = None

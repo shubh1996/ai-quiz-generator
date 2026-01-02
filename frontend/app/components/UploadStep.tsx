@@ -18,6 +18,7 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
   const [showRejectionModal, setShowRejectionModal] = useState(false);
   const [rejectionReason, setRejectionReason] = useState("");
   const [rejectionConfidence, setRejectionConfidence] = useState<number | undefined>();
+  const [ageMode, setAgeMode] = useState<"kids" | "18+">("18+"); // Content safety mode
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -47,6 +48,9 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
         setLoading(false);
         return;
       }
+
+      // Add age mode for content safety filtering
+      formData.append("age_mode", ageMode);
 
       // Add timeout to prevent hanging requests (2 minutes for video/document processing)
       const controller = new AbortController();
@@ -116,6 +120,47 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-gray-800 mb-2">Step 1: Upload Content</h2>
           <p className="text-gray-600">Choose a document, URL, or video to get started</p>
+        </div>
+
+        {/* Age Mode Toggle - CRITICAL for content safety */}
+        <div className="mb-6 p-4 bg-gradient-to-r from-purple-50 to-pink-50 border-2 border-purple-200 rounded-lg">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h3 className="font-bold text-gray-800 flex items-center gap-2">
+                🛡️ Content Safety Mode
+              </h3>
+              <p className="text-sm text-gray-600 mt-1">
+                {ageMode === "kids"
+                  ? "Kid-safe mode: Blocks violence, substances, mature themes, and inappropriate content"
+                  : "Adult mode: Basic filtering for extremely inappropriate content only"}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setAgeMode("kids")}
+              className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
+                ageMode === "kids"
+                  ? "bg-gradient-to-r from-green-500 to-emerald-500 text-white shadow-lg"
+                  : "bg-white text-gray-600 border-2 border-gray-300 hover:border-green-400"
+              }`}
+            >
+              👶 Under 18 (Kid-Safe)
+            </button>
+            <button
+              type="button"
+              onClick={() => setAgeMode("18+")}
+              className={`flex-1 py-3 px-4 rounded-lg font-semibold transition-all ${
+                ageMode === "18+"
+                  ? "bg-gradient-to-r from-purple-500 to-violet-500 text-white shadow-lg"
+                  : "bg-white text-gray-600 border-2 border-gray-300 hover:border-purple-400"
+              }`}
+            >
+              🎓 18+ (Adult)
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-3 gap-4 mb-8">
