@@ -47,15 +47,24 @@ class DocumentProcessor:
         try:
             return await self._direct_scrape(url)
         except Exception as direct_error:
-            print(f"⚠️ Direct scraping failed: {direct_error}")
-            print(f"🔄 Falling back to Jina AI Reader...")
+            direct_error_msg = str(direct_error)
+            print(f"⚠️ Direct scraping failed: {direct_error_msg}")
 
-            # Fallback to Jina AI Reader for Cloudflare-protected sites
-            try:
-                return await self._jina_scrape(url)
-            except Exception as jina_error:
-                print(f"❌ Jina AI fallback also failed: {jina_error}")
-                # Re-raise the original error
+            # If it's a 403 error, try Jina AI fallback
+            if "403" in direct_error_msg:
+                print(f"🔄 Detected 403 block, trying Jina AI Reader fallback...")
+                try:
+                    return await self._jina_scrape(url)
+                except Exception as jina_error:
+                    print(f"❌ Jina AI fallback also failed: {jina_error}")
+                    # Both methods failed - provide helpful error message
+                    raise ValueError(
+                        f"Unable to access this website. The site appears to have bot protection that blocks automated access. "
+                        f"Try: (1) Using a different URL from the same topic, (2) Copying the text directly and using file upload instead, "
+                        f"or (3) Using a site without strict bot protection. Original error: {direct_error_msg}"
+                    )
+            else:
+                # Non-403 error, re-raise original
                 raise direct_error
 
     async def _jina_scrape(self, url: str) -> str:
