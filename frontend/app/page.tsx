@@ -106,7 +106,7 @@ export default function Home() {
             <QuizStep quizData={quizData} onSubmit={handleQuizSubmit} />
           )}
           {currentStep === "results" && quizData && (
-            <ResultsStep score={score} totalQuestions={quizData.questions.length} quizData={quizData} onRestart={handleRestart} />
+            <ResultsStep score={score} totalQuestions={quizData.quiz.questions.length} quizData={quizData} onRestart={handleRestart} />
           )}
         </main>
 

@@ -34,7 +34,7 @@ export default function VerificationBadge({ verification }: VerificationBadgePro
         <div className="flex-1">
           <p className="font-semibold text-blue-800">AI-Verified Educational Content</p>
           <p className="text-sm text-blue-600">
-            Confidence: {verification.confidenceScore?.toFixed(1)}% | Quality content for learning
+            Confidence: {verification.confidence_score?.toFixed(1)}% | Quality content for learning
           </p>
         </div>
       </div>

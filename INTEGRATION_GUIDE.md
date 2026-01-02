@@ -311,74 +311,7 @@ const percentageScore = Math.round((totalScore / maxScore) * 100);
 
 ---
 
-## Integration Examples
-
-### JavaScript/TypeScript
-
-```typescript
-async function generateQuiz(fileOrUrl: File | string): Promise<QuizResponse> {
-  const formData = new FormData();
-
-  if (typeof fileOrUrl === 'string') {
-    formData.append('url', fileOrUrl);
-  } else {
-    formData.append('file', fileOrUrl);
-  }
-
-  const response = await fetch(
-    'https://ai-quiz-generator-f8dr.onrender.com/api/generate-quiz',
-    {
-      method: 'POST',
-      body: formData,
-      // Recommended: 2 minute timeout
-      signal: AbortSignal.timeout(120000)
-    }
-  );
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail);
-  }
-
-  return await response.json();
-}
-
-// Usage
-const quiz = await generateQuiz('https://example.com/article');
-console.log(`Generated ${quiz.quiz.num_quiz_questions} questions`);
-```
-
-### Python
-
-```python
-import requests
-
-def generate_quiz(file_path=None, url=None, video_url=None):
-    """Generate a quiz from content"""
-    api_url = "https://ai-quiz-generator-f8dr.onrender.com/api/generate-quiz"
-
-    if file_path:
-        with open(file_path, 'rb') as f:
-            files = {'file': f}
-            response = requests.post(api_url, files=files, timeout=120)
-    elif url:
-        data = {'url': url}
-        response = requests.post(api_url, data=data, timeout=120)
-    elif video_url:
-        data = {'video_url': video_url}
-        response = requests.post(api_url, data=data, timeout=120)
-    else:
-        raise ValueError("Must provide file_path, url, or video_url")
-
-    response.raise_for_status()
-    return response.json()
-
-# Usage
-quiz = generate_quiz(url="https://en.wikipedia.org/wiki/Python")
-print(f"Generated {quiz['quiz']['num_quiz_questions']} questions")
-```
-
-### PHP
+## Integration Examples for PHP
 
 ```php
 <?php
@@ -409,44 +342,6 @@ $quiz = generateQuiz('https://example.com/article');
 echo "Generated " . $quiz['quiz']['num_quiz_questions'] . " questions\n";
 ?>
 ```
-
-### Java
-
-```java
-import java.net.http.*;
-import java.net.URI;
-import java.time.Duration;
-
-public class QuizGenerator {
-    private static final String API_URL =
-        "https://ai-quiz-generator-f8dr.onrender.com/api/generate-quiz";
-
-    public static String generateQuiz(String url) throws Exception {
-        HttpClient client = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(120))
-            .build();
-
-        String boundary = "----Boundary" + System.currentTimeMillis();
-        String formData = "--" + boundary + "\r\n" +
-            "Content-Disposition: form-data; name=\"url\"\r\n\r\n" +
-            url + "\r\n" +
-            "--" + boundary + "--\r\n";
-
-        HttpRequest request = HttpRequest.newBuilder()
-            .uri(URI.create(API_URL))
-            .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-            .POST(HttpRequest.BodyPublishers.ofString(formData))
-            .build();
-
-        HttpResponse<String> response = client.send(request,
-            HttpResponse.BodyHandlers.ofString());
-
-        return response.body();
-    }
-}
-```
-
----
 
 ## Error Handling
 
