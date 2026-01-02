@@ -41,7 +41,56 @@ class DocumentProcessor:
 
     async def process_url(self, url: str) -> str:
         """
-        Extract text content from a URL with retry logic and multiple User-Agent strategies
+        Extract text content from a URL with retry logic and fallback to Jina AI Reader
+        """
+        # Try direct scraping first
+        try:
+            return await self._direct_scrape(url)
+        except Exception as direct_error:
+            print(f"⚠️ Direct scraping failed: {direct_error}")
+            print(f"🔄 Falling back to Jina AI Reader...")
+
+            # Fallback to Jina AI Reader for Cloudflare-protected sites
+            try:
+                return await self._jina_scrape(url)
+            except Exception as jina_error:
+                print(f"❌ Jina AI fallback also failed: {jina_error}")
+                # Re-raise the original error
+                raise direct_error
+
+    async def _jina_scrape(self, url: str) -> str:
+        """
+        Use Jina AI Reader API to scrape content (bypasses Cloudflare, returns clean markdown)
+        Free tier: 20 requests/minute, no API key required
+        """
+        jina_url = f"https://r.jina.ai/{url}"
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            'Accept': 'text/plain',
+            'X-Return-Format': 'text',
+        }
+
+        print(f"🤖 Using Jina AI Reader for: {url}")
+        try:
+            response = requests.get(jina_url, headers=headers, timeout=30)
+            response.raise_for_status()
+
+            text = response.text.strip()
+
+            if len(text) < 100:
+                raise ValueError("Jina AI returned insufficient content")
+
+            print(f"✓ Jina AI extracted {len(text)} characters")
+            return text
+        except requests.exceptions.HTTPError as e:
+            # Jina AI can't access this site, skip to next fallback
+            if e.response.status_code == 451:
+                raise ValueError(f"Site is blocked by Jina AI (legal restrictions)")
+            raise
+
+    async def _direct_scrape(self, url: str) -> str:
+        """
+        Direct scraping with retry logic and multiple User-Agent strategies
         """
         # Multiple realistic User-Agents to rotate through
         user_agents = [
@@ -86,17 +135,30 @@ class DocumentProcessor:
 
                 print(f"📡 Fetching URL (attempt {attempt + 1}/3): {url}")
 
-                # Use session with cookies for persistence
-                session = requests.Session()
-                session.headers.update(headers)
-
                 # Add small delay between retries to appear more human
                 if attempt > 0:
-                    delay = random.uniform(1.0, 2.5)
+                    delay = random.uniform(1.5, 3.0)
                     print(f"⏳ Waiting {delay:.1f}s before retry...")
                     time.sleep(delay)
 
-                response = session.get(url, timeout=25, allow_redirects=True, verify=True)
+                # Use session with cookies for persistence
+                session = requests.Session()
+
+                # Set a common Referer to appear like a normal browser navigation
+                if attempt > 0:
+                    headers['Referer'] = 'https://www.google.com/'
+
+                session.headers.update(headers)
+
+                # First request to get cookies
+                response = session.get(url, timeout=30, allow_redirects=True, verify=True)
+
+                # If we get a challenge page, wait and retry with cookies
+                if 'checking your browser' in response.text.lower() or len(response.text) < 500:
+                    print(f"🔄 Detected potential challenge, waiting...")
+                    time.sleep(2)
+                    response = session.get(url, timeout=30, allow_redirects=True, verify=True)
+
                 response.raise_for_status()
                 print(f"✓ Successfully fetched URL (status {response.status_code})")
 
