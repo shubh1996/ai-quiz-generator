@@ -31,6 +31,8 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
     setError("");
     setLoading(true);
 
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
     try {
       const formData = new FormData();
 
@@ -45,8 +47,6 @@ export default function UploadStep({ onQuizGenerated }: UploadStepProps) {
         setLoading(false);
         return;
       }
-
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
       // Add timeout to prevent hanging requests (2 minutes for video/document processing)
       const controller = new AbortController();
