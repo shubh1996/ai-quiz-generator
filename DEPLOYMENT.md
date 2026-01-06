@@ -3,7 +3,50 @@
 ## Quick Deploy Summary
 
 - **Frontend**: Vercel (recommended)
-- **Backend**: Railway or Render (both free tier available)
+- **Backend**: Railway (recommended for YouTube videos) or Render
+
+**Important for YouTube Video Processing**: Railway is recommended over Render because it has better IP reputation and no cold starts, improving YouTube transcript success rates.
+
+---
+
+## ⭐ Recommended: Railway Setup for YouTube Videos
+
+Railway provides better reliability for YouTube video processing due to:
+- Better IP reputation (fewer bot detection blocks)
+- 8GB RAM available for video processing
+- No cold starts (always-on)
+- Automatic Whisper fallback works reliably
+
+### Railway Migration Steps:
+
+1. **Create Railway Account**
+   - Go to [railway.app](https://railway.app)
+   - Sign up with GitHub
+
+2. **Deploy from GitHub**
+   - Click "New Project" → "Deploy from GitHub repo"
+   - Select your quiz-generator repository
+   - Railway will auto-detect the `railway.json` configuration
+
+3. **Set Environment Variables**
+   Add these in Railway dashboard → Variables:
+   ```
+   PERPLEXITY_API_KEY=your_perplexity_key
+   OPENAI_API_KEY=your_openai_key  # Required for Whisper transcription
+   YOUTUBE_API_KEY=your_youtube_key  # Optional but recommended
+   FRONTEND_URL=https://your-frontend.vercel.app
+   ```
+
+4. **Deploy**
+   - Railway will automatically build and deploy
+   - Your backend URL: `https://your-project.railway.app`
+   - Health check: `https://your-project.railway.app/health`
+
+5. **Update Frontend**
+   - In Vercel, set `NEXT_PUBLIC_API_URL` to your Railway URL
+   - Redeploy frontend
+
+**Cost**: $5-10/month (includes $5 free credits)
 
 ---
 
@@ -160,6 +203,9 @@ After deploying the backend, update the frontend API URL:
 ### Backend (Railway/Render)
 ```
 PERPLEXITY_API_KEY=your_perplexity_api_key_here
+OPENAI_API_KEY=your_openai_api_key_here  # Required for video transcription (Whisper)
+YOUTUBE_API_KEY=your_youtube_api_key_here  # Optional but recommended for YouTube videos
+FRONTEND_URL=https://your-frontend.vercel.app  # For CORS
 ```
 
 ### Frontend (Vercel)
