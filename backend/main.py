@@ -40,15 +40,14 @@ app.add_middleware(
 )
 
 # Initialize services
-openai_api_key = os.getenv("OPENAI_API_KEY")
-document_processor = DocumentProcessor(openai_api_key=openai_api_key)
+document_processor = DocumentProcessor()
 quiz_generator = QuizGenerator()
 content_metadata_service = ContentMetadataService()
 content_safety_service = ContentSafetyService()
 
-# Initialize video and verification services if OpenAI key available
-video_processor = VideoProcessor(openai_api_key) if openai_api_key else None
-verification_service = VerificationService(openai_api_key) if openai_api_key else None
+# Initialize video and verification services (no OpenAI needed!)
+video_processor = VideoProcessor()
+verification_service = VerificationService()
 
 
 @app.get("/")

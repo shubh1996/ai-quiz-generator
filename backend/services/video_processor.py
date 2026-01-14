@@ -1,7 +1,6 @@
 import os
 import re
 import yt_dlp
-from openai import AsyncOpenAI
 from pathlib import Path
 import tempfile
 import asyncio
@@ -30,8 +29,7 @@ class VideoProcessingResult(BaseModel):
 class VideoProcessor:
     """Service for processing video URLs and extracting transcripts"""
 
-    def __init__(self, openai_api_key: str):
-        self.openai_client = AsyncOpenAI(api_key=openai_api_key)
+    def __init__(self):
         self.temp_dir = tempfile.mkdtemp(prefix="quiz_videos_")
         self.max_duration = int(os.getenv("MAX_VIDEO_DURATION_SECONDS", "7200"))  # 2 hours default
 
@@ -252,10 +250,13 @@ class VideoProcessor:
             if not transcript:
                 transcript = await self._try_extract_subtitles(url, common_opts)
 
-            # Step 4: If no subtitles, fall back to audio transcription
+            # Step 4: If no subtitles found, raise error (no Whisper fallback)
             if not transcript:
-                print("⚠️ No subtitles found, attempting audio download and transcription...")
-                transcript = await self._transcribe_from_audio(url, common_opts)
+                raise Exception(
+                    "Could not extract transcript from video. "
+                    "Please ensure the video has English captions/subtitles enabled. "
+                    "Educational channels like Khan Academy, CrashCourse, and TED-Ed usually have captions."
+                )
 
             return VideoProcessingResult(
                 transcript=transcript,
@@ -348,64 +349,6 @@ class VideoProcessor:
 
         return text.strip()
 
-    async def _transcribe_from_audio(self, url: str, common_opts: dict) -> str:
-        """
-        Download audio and transcribe using Whisper API.
-        Fallback method when subtitles are not available.
-        """
-        ydl_opts = {
-            **common_opts,
-            'format': 'bestaudio/best',
-            'outtmpl': f'{self.temp_dir}/%(id)s.%(ext)s',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-        }
-
-        audio_file_path = None
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                download_info = ydl.extract_info(url, download=True)
-                video_id = download_info.get('id', 'audio')
-                audio_file_path = f"{self.temp_dir}/{video_id}.mp3"
-
-            if not audio_file_path or not os.path.exists(audio_file_path):
-                raise Exception("Failed to download audio from video")
-
-            # Transcribe audio
-            transcript = await self.transcribe_audio(audio_file_path)
-
-            return transcript
-        finally:
-            # Cleanup audio file
-            if audio_file_path:
-                try:
-                    os.remove(audio_file_path)
-                except:
-                    pass
-
-    async def transcribe_audio(self, audio_path: str) -> str:
-        """
-        Transcribe audio file using OpenAI Whisper API
-        """
-        try:
-            with open(audio_path, 'rb') as audio_file:
-                transcript = await self.openai_client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    response_format="text"
-                )
-
-            if isinstance(transcript, str):
-                return transcript
-            else:
-                # Handle case where transcript is an object with text attribute
-                return transcript.text if hasattr(transcript, 'text') else str(transcript)
-
-        except Exception as e:
-            raise Exception(f"Transcription failed: {str(e)}")
 
     def cleanup(self):
         """Clean up temporary files"""

@@ -124,7 +124,7 @@ Return JSON format:
 class VerificationService:
     """Service for verifying educational content quality"""
 
-    def __init__(self, openai_api_key: str = None):
+    def __init__(self):
         self.perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
         self.confidence_threshold = 70.0  # Minimum confidence to accept content
 

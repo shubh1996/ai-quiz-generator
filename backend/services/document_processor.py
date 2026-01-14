@@ -8,7 +8,6 @@ import os
 import tempfile
 import time
 import random
-from openai import AsyncOpenAI
 
 
 class DocumentProcessor:
@@ -16,8 +15,8 @@ class DocumentProcessor:
     Processes documents and URLs to extract text content
     """
 
-    def __init__(self, openai_api_key: str = None):
-        self.openai_client = AsyncOpenAI(api_key=openai_api_key) if openai_api_key else None
+    def __init__(self):
+        pass
 
     async def process_file(self, file: UploadFile) -> str:
         """
@@ -26,9 +25,12 @@ class DocumentProcessor:
         content = await file.read()
         file_extension = file.filename.split('.')[-1].lower()
 
-        # Check if it's a video file
+        # Check if it's a video file - not supported without OpenAI
         if file_extension in ['mp4', 'avi', 'mov', 'mkv', 'webm']:
-            return await self.process_video_file(file, content)
+            raise ValueError(
+                "Video file uploads are not supported. Please use a YouTube URL instead. "
+                "Go to YouTube, copy the video link, and paste it in the 'Paste URL' option."
+            )
 
         if file_extension == 'pdf':
             return self._extract_from_pdf(content)
@@ -269,58 +271,3 @@ class DocumentProcessor:
             return text.strip()
         except Exception as e:
             raise ValueError(f"Failed to extract text from DOCX: {str(e)}")
-
-    async def process_video_file(self, file: UploadFile, content: bytes) -> str:
-        """
-        Process uploaded video file:
-        1. Save to temporary location
-        2. Extract audio
-        3. Transcribe with Whisper API
-        4. Return transcript
-        """
-        if not self.openai_client:
-            raise ValueError("OpenAI API key is required for video transcription")
-
-        temp_video_path = None
-        try:
-            # Save video to temporary file
-            with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file.filename.split('.')[-1]}") as temp_video:
-                temp_video.write(content)
-                temp_video_path = temp_video.name
-
-            # Extract audio using pydub (requires ffmpeg)
-            from pydub import AudioSegment
-
-            print(f"🎬 Processing video file: {file.filename}")
-            audio = AudioSegment.from_file(temp_video_path)
-
-            # Export as mp3
-            temp_audio_path = temp_video_path.replace(temp_video_path.split('.')[-1], 'mp3')
-            audio.export(temp_audio_path, format='mp3')
-            print(f"🎵 Extracted audio to temporary file")
-
-            # Transcribe with Whisper
-            print(f"🎤 Transcribing audio...")
-            with open(temp_audio_path, 'rb') as audio_file:
-                transcript = await self.openai_client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    response_format="text"
-                )
-
-            transcript_text = transcript if isinstance(transcript, str) else transcript.text
-            print(f"✓ Transcription complete ({len(transcript_text)} characters)")
-
-            # Cleanup
-            os.remove(temp_video_path)
-            os.remove(temp_audio_path)
-
-            return transcript_text
-
-        except ImportError:
-            raise ValueError("pydub library is required for video processing. Please install it: pip install pydub")
-        except Exception as e:
-            # Cleanup on error
-            if temp_video_path and os.path.exists(temp_video_path):
-                os.remove(temp_video_path)
-            raise ValueError(f"Failed to process video file: {str(e)}")
