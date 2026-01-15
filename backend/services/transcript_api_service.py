@@ -60,10 +60,15 @@ class TranscriptAPIService:
             }
 
             # RapidAPI YouTube Transcripts endpoint
+            # Format: /youtube/transcript?url=...&videoId=...&lang=en
+            video_url = f"https://www.youtube.com/watch?v={video_id}"
             url = f"{self.base_url}/youtube/transcript"
             params = {
-                "video_id": video_id,
+                "url": video_url,
+                "videoId": video_id,
                 "lang": language,
+                "chunkSize": 500,
+                "text": "false",
             }
 
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -72,27 +77,26 @@ class TranscriptAPIService:
                 if response.status_code == 200:
                     data = response.json()
 
-                    # Handle different response formats
+                    # Handle the RapidAPI response format:
+                    # {"lang": "en", "availableLangs": [...], "content": [{"text": "...", "offset": ..., "duration": ...}, ...]}
                     transcript_text = None
 
-                    if isinstance(data, list):
+                    if isinstance(data, dict) and "content" in data:
+                        # Standard RapidAPI format with content array
+                        content = data.get("content", [])
+                        if isinstance(content, list) and len(content) > 0:
+                            transcript_text = " ".join(
+                                item.get("text", "") for item in content if item.get("text")
+                            )
+                    elif isinstance(data, list):
                         # Response is a list of transcript segments
                         transcript_text = " ".join(
-                            segment.get("text", "") for segment in data
+                            segment.get("text", "") for segment in data if segment.get("text")
                         )
                     elif isinstance(data, dict):
-                        # Response is a dict with transcript data
+                        # Other dict formats
                         if "transcript" in data:
                             transcript_text = data["transcript"]
-                        elif "content" in data:
-                            # Some APIs return content array
-                            content = data.get("content", [])
-                            if isinstance(content, list):
-                                transcript_text = " ".join(
-                                    item.get("text", "") for item in content
-                                )
-                            else:
-                                transcript_text = str(content)
                         elif "text" in data:
                             transcript_text = data["text"]
 
@@ -103,7 +107,7 @@ class TranscriptAPIService:
                             "method": "rapidapi_transcript"
                         }
                     else:
-                        print(f"⚠️ RapidAPI returned empty or short transcript")
+                        print(f"⚠️ RapidAPI returned empty or short transcript (got {len(transcript_text) if transcript_text else 0} chars)")
                         return None
 
                 elif response.status_code == 404:
