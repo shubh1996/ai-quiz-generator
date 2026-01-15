@@ -79,6 +79,7 @@ class VideoProcessor:
         Try to get transcript using multiple methods:
         1. YouTube Data API v3 (if configured) - verifies video exists and has captions
         2. youtube-transcript-api - fetches actual captions (free, no auth needed)
+        3. yt-dlp subtitle extraction - more robust against bot detection
         """
         try:
             video_id = self.extract_youtube_video_id(url)
@@ -99,7 +100,7 @@ class VideoProcessor:
                 else:
                     print(f"⚠️ Could not verify video via YouTube API, trying anyway...")
 
-            # Method 2: youtube-transcript-api (free, no auth, but may be blocked)
+            # Method 2: youtube-transcript-api (free, no auth, but may be blocked on cloud servers)
             print(f"🔍 Attempting to fetch transcript via YouTube Transcript API for video: {video_id}")
 
             # Try multiple language codes and auto-generated captions
@@ -133,23 +134,33 @@ class VideoProcessor:
                 except:
                     pass
 
-            if not transcript_list:
-                return None
+            if transcript_list:
+                # Combine all transcript entries
+                transcript_text = " ".join([entry['text'] for entry in transcript_list])
 
-            # Combine all transcript entries
-            transcript_text = " ".join([entry['text'] for entry in transcript_list])
+                if transcript_text:
+                    print("✓ Successfully fetched transcript via YouTube Transcript API")
+                    return {
+                        'transcript': transcript_text,
+                        'method': 'youtube_transcript_api'
+                    }
 
-            if transcript_text:
-                print("✓ Successfully fetched transcript via YouTube Transcript API")
-                return {
-                    'transcript': transcript_text,
-                    'method': 'youtube_transcript_api'
-                }
+            # Method 3: If youtube-transcript-api failed (likely bot detection), try yt-dlp
+            print(f"⚠️ YouTube Transcript API failed, trying yt-dlp subtitle extraction...")
+            yt_dlp_result = await self._try_yt_dlp_subtitles(url, video_id)
+            if yt_dlp_result:
+                return yt_dlp_result
 
             return None
 
         except (TranscriptsDisabled, NoTranscriptFound) as e:
             print(f"⚠️ YouTube Transcript API failed: {str(e)}")
+            # Try yt-dlp as fallback
+            video_id = self.extract_youtube_video_id(url)
+            if video_id:
+                yt_dlp_result = await self._try_yt_dlp_subtitles(url, video_id)
+                if yt_dlp_result:
+                    return yt_dlp_result
             return None
         except Exception as e:
             # Detect specific YouTube blocking/parsing errors
@@ -158,6 +169,107 @@ class VideoProcessor:
                 print(f"⚠️ YouTube Transcript API: Video transcript is blocked or unavailable")
             else:
                 print(f"⚠️ YouTube Transcript API error: {error_msg}")
+
+            # Try yt-dlp as fallback for bot detection issues
+            video_id = self.extract_youtube_video_id(url)
+            if video_id:
+                yt_dlp_result = await self._try_yt_dlp_subtitles(url, video_id)
+                if yt_dlp_result:
+                    return yt_dlp_result
+            return None
+
+    async def _try_yt_dlp_subtitles(self, url: str, video_id: str) -> Optional[Dict[str, any]]:
+        """
+        Try to extract subtitles using yt-dlp with enhanced bot evasion.
+        This is more robust than youtube-transcript-api on cloud servers.
+        """
+        try:
+            print(f"🔄 Attempting yt-dlp subtitle extraction with bot evasion...")
+
+            # Enhanced options for bot detection evasion
+            subtitle_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': ['en', 'en-US', 'en-GB', 'en-orig'],
+                'skip_download': True,
+                'outtmpl': f'{self.temp_dir}/%(id)s',
+                # Enhanced bot evasion settings
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['ios', 'android', 'web'],
+                        'player_skip': ['webpage', 'configs'],
+                    }
+                },
+                'http_headers': {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Sec-Ch-Ua': '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"',
+                    'Sec-Ch-Ua-Mobile': '?0',
+                    'Sec-Ch-Ua-Platform': '"Windows"',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Upgrade-Insecure-Requests': '1',
+                },
+                # Use cookies from browser if available
+                'cookiesfrombrowser': ('chrome',) if os.path.exists(os.path.expanduser('~/.config/google-chrome')) else None,
+            }
+
+            # Remove None values
+            subtitle_opts = {k: v for k, v in subtitle_opts.items() if v is not None}
+
+            with yt_dlp.YoutubeDL(subtitle_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+
+                # Check if subtitles were downloaded
+                actual_video_id = info.get('id', video_id)
+
+                # Try different subtitle file extensions and language codes
+                subtitle_patterns = [
+                    f'{actual_video_id}.en.vtt',
+                    f'{actual_video_id}.en-US.vtt',
+                    f'{actual_video_id}.en-GB.vtt',
+                    f'{actual_video_id}.en-orig.vtt',
+                    f'{actual_video_id}.en.srt',
+                ]
+
+                for pattern in subtitle_patterns:
+                    subtitle_path = f"{self.temp_dir}/{pattern}"
+                    if os.path.exists(subtitle_path):
+                        with open(subtitle_path, 'r', encoding='utf-8') as f:
+                            subtitle_content = f.read()
+
+                        # Clean VTT/SRT format
+                        transcript = self._clean_subtitle_text(subtitle_content)
+
+                        # Cleanup subtitle file
+                        try:
+                            os.remove(subtitle_path)
+                        except:
+                            pass
+
+                        if transcript and len(transcript) > 100:  # Ensure we have meaningful content
+                            print(f"✓ Successfully extracted subtitles via yt-dlp ({pattern})")
+                            return {
+                                'transcript': transcript,
+                                'method': 'yt_dlp_subtitles'
+                            }
+
+            print(f"⚠️ yt-dlp could not find subtitle files")
+            return None
+
+        except Exception as e:
+            error_msg = str(e).lower()
+            if 'bot' in error_msg or 'sign in' in error_msg:
+                print(f"⚠️ yt-dlp blocked by bot detection: {e}")
+            else:
+                print(f"⚠️ yt-dlp subtitle extraction failed: {e}")
             return None
 
     async def process_video_url(self, url: str) -> VideoProcessingResult:
@@ -205,14 +317,14 @@ class VideoProcessor:
                     )
 
             # Step 2: Try yt-dlp for non-YouTube or if Transcript API failed
-            # Common options to avoid blocking
+            # Enhanced options for better bot detection evasion
             common_opts = {
                 'quiet': True,
                 'no_warnings': True,
-                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'web'],
+                        'player_client': ['ios', 'android', 'web'],  # iOS client is less likely to be blocked
                         'player_skip': ['webpage', 'configs'],
                     }
                 },
@@ -287,13 +399,21 @@ class VideoProcessor:
         This is less likely to be blocked than downloading audio.
         """
         try:
+            # Enhanced subtitle options with better bot evasion
             subtitle_opts = {
                 **common_opts,
                 'writesubtitles': True,
                 'writeautomaticsub': True,
-                'subtitleslangs': ['en', 'en-US', 'en-GB'],
+                'subtitleslangs': ['en', 'en-US', 'en-GB', 'en-orig'],
                 'skip_download': True,
                 'outtmpl': f'{self.temp_dir}/%(id)s',
+                # Override with enhanced bot evasion
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['ios', 'android', 'web'],
+                        'player_skip': ['webpage', 'configs'],
+                    }
+                },
             }
 
             with yt_dlp.YoutubeDL(subtitle_opts) as ydl:
@@ -303,7 +423,7 @@ class VideoProcessor:
                 video_id = info.get('id', 'video')
 
                 # Try different subtitle file extensions
-                for ext in ['.en.vtt', '.en-US.vtt', '.en-GB.vtt', '.en.srt']:
+                for ext in ['.en.vtt', '.en-US.vtt', '.en-GB.vtt', '.en-orig.vtt', '.en.srt']:
                     subtitle_path = f"{self.temp_dir}/{video_id}{ext}"
                     if os.path.exists(subtitle_path):
                         with open(subtitle_path, 'r', encoding='utf-8') as f:
@@ -318,7 +438,7 @@ class VideoProcessor:
                         except:
                             pass
 
-                        if transcript:
+                        if transcript and len(transcript) > 100:
                             print("✓ Successfully extracted subtitles")
                             return transcript
 
