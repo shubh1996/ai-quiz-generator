@@ -17,6 +17,14 @@ except ImportError:
     YOUTUBE_API_AVAILABLE = False
     print("⚠️ google-api-python-client not installed - YouTube API disabled")
 
+# Import third-party transcript API service (for cloud/production reliability)
+try:
+    from services.transcript_api_service import TranscriptAPIService
+    TRANSCRIPT_API_AVAILABLE = True
+except ImportError:
+    TRANSCRIPT_API_AVAILABLE = False
+    print("⚠️ transcript_api_service not available")
+
 
 class VideoProcessingResult(BaseModel):
     """Result of video processing"""
@@ -43,6 +51,14 @@ class VideoProcessor:
                 print(f"⚠️ YouTube API key not configured: {e}")
             except Exception as e:
                 print(f"⚠️ YouTube API initialization failed: {e}")
+
+        # Initialize third-party transcript API (most reliable for cloud servers)
+        self.transcript_api = None
+        if TRANSCRIPT_API_AVAILABLE:
+            try:
+                self.transcript_api = TranscriptAPIService()
+            except Exception as e:
+                print(f"⚠️ Transcript API initialization failed: {e}")
 
     def detect_platform(self, url: str) -> str:
         """Detect video platform from URL"""
@@ -151,6 +167,11 @@ class VideoProcessor:
             if yt_dlp_result:
                 return yt_dlp_result
 
+            # Method 4: If all free methods failed, try RapidAPI (most reliable for cloud servers)
+            rapidapi_result = await self._try_rapidapi_transcript(video_id)
+            if rapidapi_result:
+                return rapidapi_result
+
             return None
 
         except (TranscriptsDisabled, NoTranscriptFound) as e:
@@ -161,6 +182,10 @@ class VideoProcessor:
                 yt_dlp_result = await self._try_yt_dlp_subtitles(url, video_id)
                 if yt_dlp_result:
                     return yt_dlp_result
+                # Try RapidAPI as final fallback
+                rapidapi_result = await self._try_rapidapi_transcript(video_id)
+                if rapidapi_result:
+                    return rapidapi_result
             return None
         except Exception as e:
             # Detect specific YouTube blocking/parsing errors
@@ -176,6 +201,25 @@ class VideoProcessor:
                 yt_dlp_result = await self._try_yt_dlp_subtitles(url, video_id)
                 if yt_dlp_result:
                     return yt_dlp_result
+                # Try RapidAPI as final fallback
+                rapidapi_result = await self._try_rapidapi_transcript(video_id)
+                if rapidapi_result:
+                    return rapidapi_result
+            return None
+
+    async def _try_rapidapi_transcript(self, video_id: str) -> Optional[Dict[str, any]]:
+        """
+        Try to fetch transcript using RapidAPI's YouTube Transcripts service.
+        This is the most reliable method for cloud servers as it bypasses bot detection.
+        """
+        if not self.transcript_api or not self.transcript_api.is_available():
+            return None
+
+        try:
+            result = await self.transcript_api.get_transcript(video_id)
+            return result
+        except Exception as e:
+            print(f"⚠️ RapidAPI transcript fetch failed: {e}")
             return None
 
     async def _try_yt_dlp_subtitles(self, url: str, video_id: str) -> Optional[Dict[str, any]]:
