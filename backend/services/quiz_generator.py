@@ -106,21 +106,7 @@ class QuizGenerator:
         """
         # Clean up the content first
         content = ' '.join(content.split())  # Remove extra whitespace
-        original_len = len(content)
-
-        # Allow up to 15,000 characters (~12-15 min of spoken content, ~3,750 tokens)
-        max_content_length = 15000
-        if len(content) > max_content_length:
-            # Sample from beginning, middle, and end so quizzes cover the full video
-            section_size = max_content_length // 3
-            beginning = content[:section_size]
-            middle_start = (len(content) - section_size) // 2
-            middle = content[middle_start:middle_start + section_size]
-            end = content[-section_size:]
-            content = beginning + "\n[...]\n" + middle + "\n[...]\n" + end
-            print(f"📝 Content sampled from beginning/middle/end ({len(content)} chars from {original_len} total)")
-        else:
-            print(f"📝 Using full content ({len(content)} chars)")
+        print(f"📝 Using full content ({len(content)} chars)")
 
         return f"""You are an expert educator creating a comprehensive quiz. Read the following content carefully and create exactly 5 multiple-choice questions that test deep understanding of the KEY FACTS, CONCEPTS, and DETAILS mentioned in the content.
 
